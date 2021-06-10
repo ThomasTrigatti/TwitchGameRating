@@ -1,0 +1,332 @@
+---
+title: "Twitch Game Rating"
+author: "Thomas Trigatti"
+output:
+  ioslides_presentation:
+    css: style.css
+    incremental: yes
+    widescreen: true
+    smaller: true
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = FALSE, message = FALSE, warning = FALSE)
+```
+
+## Twitch Game Rating Dataset
+**Twitch.tv** è una piattaforma di livestreaming di proprietà di Amazon lanciata il 6 giugno 2011. La piattaforma consente principalmente lo streaming di videogiochi, trasmissioni di eventi e competizioni eSports (Competizioni Videoludiche) e i suoi contenuti possono essere guardati sia in diretta sia on demand. <br>
+Il [Twitch Game Dataset](https://github.com/ThomasTrigatti/TwitchGameRating) preso in esame è composto dalla **top 200** delle caterorie streammate sulla piattaforma ogni mese da **Gennaio 2016** ad **Aprile 2021**.
+ 
+## Domande
+ 1. Quali sono le categorie che si sono piazzate in prima posizione? Quante volte?
+ 2. Quale o quali variabili influenzano il posizionamento delle varie categorie?
+ 3. Qual è l'andamento dei Videogiochi a cui sono maggiormente interessato?
+ 4. C'è stato un aumento di interesse, nel tempo, per la piattaforma (Ore Streammate e Ore Guardate)?
+ 5. C'è stato un aumento di utenza, nel tempo, sulla piattaforma (Canali/Stramer Medi e Spettatori Medi)?
+ 
+## Caricamento del DataSet
+```{r library}
+library(readr)
+library(tidyr)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+library(gganimate)
+library(corrplot)
+```
+
+```{r}
+TwitchGameRating_1 <- read_csv2("Twitch_game_data_1.csv")
+TwitchGameRating_2 <- read.csv2("Twitch_game_data_2.csv")
+```
+
+## Pulizia del Dataset
+```{r}
+#Modifica colonna Month
+TwitchGameRating_1$Month <- sprintf("%02d", as.numeric(TwitchGameRating_1$Month))
+TwitchGameRating_2$Month <- sprintf("%02d", as.numeric(TwitchGameRating_2$Month))
+
+#Correzione colonna Hours_Streamed
+TwitchGameRating_2 <- separate(TwitchGameRating_2, Hours_Streamed, 
+                            into = c("Hours_Streamed", "Hours"), 
+                            sep = " ")
+TwitchGameRating_2 <- TwitchGameRating_2 %>% 
+  select(-Hours)
+
+#Correzione Unità di Misura delle colonne Hours_Streamed, Hours_Watched, Avg_Viewer_Ratio
+TwitchGameRating_2$Hours_Streamed <- as.double(TwitchGameRating_2$Hours_Streamed)
+TwitchGameRating_2$Hours_Watched <- as.double(TwitchGameRating_2$Hours_Watched)
+TwitchGameRating_2$Avg_Viewer_Ratio <- as.double(TwitchGameRating_2$Avg_Viewer_Ratio)
+
+#Creazione colonna Date, contenete Anno e Mese
+TwitchGameRating_1 <- TwitchGameRating_1 %>% 
+  unite(col = Date, Year, Month, sep="-") %>%
+  arrange(Date, Rank)
+
+TwitchGameRating_2 <- TwitchGameRating_2 %>% 
+  unite(col = Date, Year, Month, sep="-") %>%
+  arrange(Date, Rank)
+  
+#Aggiornamento del Dataset
+TwitchGameRating_2 <- TwitchGameRating_2 %>%
+  filter(Date=="2021-03" | Date=="2021-04")
+
+TwitchGameRating <- rbind.data.frame(TwitchGameRating_1, TwitchGameRating_2)
+
+#Riordinamento Dataset in base a Date e Rank
+TwitchGameRating <- TwitchGameRating %>%
+  arrange(Date, Rank)
+
+#Salvataggio Dataset Aggiornato
+write_csv2(TwitchGameRating, "TwitchGameRating_Tidy.csv")
+```
+
+```{r}
+#Caricamento Dataset Aggiornato
+TwitchGameRating <- read_csv2("TwitchGameRating_Tidy.csv")
+```
+
+## Distribuzione Temporale del Dataset
+```{r}
+#Estrazione Top5 Categorie di ogni mese
+Best5 <- TwitchGameRating %>% 
+  group_by(Date) %>% 
+  filter(Rank == c(1:5))
+
+#Animazione delle Categorie per Data
+plot <- TwitchGameRating %>% 
+  ggplot(aes(Hours_Watched/1000, Hours_Streamed/1000)) +
+  geom_point(aes(alpha=0.5, size=Rank, color=Game), show.legend = FALSE) +
+  geom_point(data = Best5) +
+  ggrepel::geom_label_repel(data = Best5, mapping = aes(label = Game)) +
+  scale_x_log10(labels = function(x) format(x, scientific = FALSE)) + 
+  scale_y_log10(labels = function(x) format(x, scientific = FALSE)) + 
+  scale_size(range = c(10, 1)) +
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line = element_line()) +
+  labs(title = 'Date: {closest_state}', 
+       x = 'Hours_Watched (log)', 
+       y = 'Hours_Streamed (log)') +
+  transition_states(Date, transition_length = 3, state_length = 5) +
+  ease_aes('cubic-in-out') +
+  enter_fade() +
+  exit_fade()
+
+#Salvataggio dell'Animazione in formato .gif
+#animate(plot, height=400, width=600, nframes = 256, 
+        #renderer=gifski_renderer())
+#anim_save("TwitchGameRating.gif", plot)
+
+#Salvataggio dell'Animazione in formato .mp4
+animate(plot, height=400, width=600, duration = 32, nframes = 1080,
+        renderer=av_renderer())
+anim_save("TwitchGameRating.mp4", plot)
+```
+L'animazione mostra la distribuzione delle categorie steammate ogni mese su Twitch ed è basata sulle **ore guardate e streammate** di ogni categoria. La scala **doppiamente logaritmica** mostra le varie categorie su una retta facilitando la comprensione del posizionamento delle varie categorie. <br>
+Si può vedere come la maggioranza delle categorie, sopratutto quelle posizionate nella metà inferiore della classifica, siano vicine tra loro mostrando un **interesse omogeneo** anche nelle categorie posizionate nella parte bassa della classifica . In più dall'inizio del 2020 si nota uno spostamento consistente di tutte le categorie verso la parte alta della distribuzione.  
+
+## 1. Categorie in prima posizione
+```{r}
+#Classifica dei giochi arrivati al 1° posto
+Top1Rating <- TwitchGameRating %>% 
+  filter(Rank == 1) %>% 
+  arrange(Date)
+
+ggplot(Top1Rating, aes(Date, Game)) +
+  geom_point(aes(color = Game, size = Hours_Watched, alpha = 0.7), show.legend = FALSE) +
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line = element_line(),
+        axis.text.y = element_text(size = 5),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+<br>
+- Si nota come **League of Legends** si sia piazzato in prima posizione per i primi **19 mesi**, da Gennaio 2016 a Luglio 2017, con un quantitativo di ore guardate costante. <br>
+- **VALORANT** nel mese di Aprile 2020, oltre che ad ottenere il primo posto in classifica, ha avuto un numero alto di ore guardate. Questo è dovuto dal fatto che guardando, le streaming si aveva la possibilità di ottenere l'accesso in anteprima del gioco stesso. <br>
+- Un'altra categoria interessante che si può notare è quella del **Just Chatting**, la quale offre un contenuto più vario, meno specifico e non incentrato su un singolo videogioco. Questa categoria si vede in prima posizione negli ultimi **12 mesi** da Maggio 2020 ad Aprile 2021, con un quantitativo di ore guardate in aumento.
+
+```{r}
+#Conteggio delle volte che i vari giochi sono arrivati al 1° posto
+count(Top1Rating, Game, sort=TRUE)
+```
+
+## 2. Variabili che influenzano il Posizionamento delle Categorie
+```{r}
+#Rimozione variabili non numeriche e cambiamento importanza della variabile Rank
+dataset <- TwitchGameRating %>%
+    mutate(Rank = 201-Rank) %>% 
+  select(-Game, -Date) 
+
+#Creazione Matrice di Correlazione
+CorMatrix <- cor(dataset, method="kendal")
+round(CorMatrix, 2)
+
+#Grafico della Matrice di Correlazione
+corrplot(CorMatrix, method="ellipse")
+
+#Grafico della Matrice di Correlazione con indice di correlazione
+corrplot.mixed(CorMatrix, lower="number", upper="ellipse", tl.pos="lt")
+
+#Cluster delle Variabili
+corrplot(CorMatrix, order = "hclust", addrect = 3)
+```
+<br>
+Osservando il corrplot della matrice di correlazione delle variabili, si può notare che il valore la variabile **Rank**, e quindi il posizionamento della categoria streammata sul Twitch, è influenzata maggiormente dalle variabili **Hours_Watched** e **Avg_Viewers** ovvero dal numero delle ore che la categoria è stata guardate e dal numero medio di spettatori con un *indice di correlazione pari* a **0.67**.
+
+## 3. Posizionamento dei Videogiochi che seguo
+```{r}
+#Estrazione dei Videogiochi a cui sono maggiormente interessato
+MyGames <- TwitchGameRating %>%
+  filter(Game == "Tom Clancy's Rainbow Six Siege" | 
+         Game == "Escape From Tarkov" | 
+         Game == "Apex Legends") %>% 
+  arrange(Date)
+
+#Preparazione Dataset per Grafico
+MyGames <- MyGames %>% 
+  group_by(Date) %>%
+  mutate(Hours_Watched_K = Hours_Watched/1000) %>% 
+  mutate(Hours_Streamed_K = Hours_Streamed/1000) %>% 
+  select(Game, Rank, Date, Hours_Watched_K, Hours_Streamed_K)
+
+#Grafico Delle Ore Guardate
+ggplot(MyGames, aes(Date, Hours_Watched_K)) +
+  geom_point(aes(color = Game, alpha = 0.7, size = Rank), show.legend = TRUE) +
+  guides(alpha = FALSE, size = FALSE) +
+  geom_smooth(aes(group = Game, color = Game), se = FALSE, show.legend = FALSE) +
+  scale_y_sqrt(labels = function(x) format(x, scientific = FALSE)) +
+  theme(panel.background = element_rect(fill = "white"),
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        axis.line = element_line(),
+        axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
+```
+```{r}
+#Grafico Delle Ore Streammate
+ggplot(MyGames, aes(Date, Hours_Streamed_K)) +
+  geom_point(aes(color = Game, alpha = 0.7, size = Rank), show.legend = TRUE) +
+  guides(alpha = FALSE, size = FALSE) +
+  geom_smooth(aes(group = Game, color = Game), se = FALSE, show.legend = FALSE) +
+  scale_y_sqrt(labels = function(x) format(x, scientific = FALSE)) +
+  theme(panel.background = element_rect(fill = "white"),
+        legend.position = "bottom",
+        legend.direction = "horizontal",
+        axis.line = element_line(),
+        axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5)) 
+```
+<br>
+*Le curve riferite a Escape From Tarkov e Apex Legends iniziano in ritardo ripetto al periodo preso in esame per il fatto che l'inzio della curva conicide con il mese di uscita del videogioco.* <br>
+L'andamento delle curve sia nel grafico delle ore guardate, sia in quello delle ore streammate sono simili. Questo indica un interesse simile nel titolo sia da parte degli streamer, sia da parte degli spettatori. <br>
+Al contrario di **Rainbow Six Siege** e **Escape From Tarkov** che hanno un continuo incremento dei propri numeri sulla piattaforma, **Apex Legends** ha avuto un picco di utenza al suo rilascio, seguito da una decrescita dovuto al fatto che, in quel periodo, non era l'unico *Battle Royale* presente e **Fortnite** era ancora molto seguito. Negli ultimi mesi, grazie alla perdita di interesse su Fortnite e all'ultimo aggiornamento che introduce una nuova modalità di gioco, Apex Legends ha avuto un incremento di interesse da estrambi i lati. 
+
+## 4. Aumento di Interesse nella Piattaforma 
+```{r}
+#Ore Streammate Mensili
+HoursStreamedMontly <- TwitchGameRating %>%
+  group_by(Date) %>% 
+  summarise(Hours_Streamed_Montly = sum(Hours_Streamed))
+
+HoursStreamedMontly <- HoursStreamedMontly %>%
+  mutate(Hours_Streamed_Montly_K = (Hours_Streamed_Montly/1000)) %>% 
+  arrange(Date)
+
+ggplot(HoursStreamedMontly, aes(Date, Hours_Streamed_Montly_K)) +
+  geom_point(aes(color = Date), show.legend = FALSE) +
+  geom_smooth(aes(group=1), se = FALSE) +
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line = element_line(),
+        axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
+```
+```{r}
+#Ore Gurdate Mensili
+HoursWatchedMontly <- TwitchGameRating %>%
+  group_by(Date) %>% 
+  summarise(Hours_Watched_Montly = sum(Hours_Watched))
+
+HoursWatchedMontly <- HoursWatchedMontly %>%
+  mutate(Hours_Watched_Montly_K = (Hours_Watched_Montly/1000))
+
+ggplot(HoursWatchedMontly, aes(Date, Hours_Watched_Montly_K)) +
+  geom_point(aes(color = Date), show.legend = FALSE) +
+  geom_smooth(aes(group=1), se = FALSE) +
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line = element_line(),
+        axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5)) 
+```
+<br>
+I due grafici mostrano un aumento di interesse per la piattaforma, sia da parte degli streamer che hanno incrementato il loro numero di ore mensili, sia da parte degli spettatori che hanno usufruito maggiormente dei contenuti presenti.
+Nel primo grafico si passa da **11.000.000 ore** streammate nel mese di Gennaio 2016 a **70.000.000 ore** ad Aprile 2021 con un rateo di incremento medio di **922 ore** al mese.
+Mentre per il grafico delle ore guardate si passa da **44.000.000 ore** a Gennaio 2016 a **203.000.000 ore** ad Aprile 2021 con un rateo di incremento medio **2.484 ore** al mese.
+<br>
+
+```{r}
+#Rapporto Ore Guardate per Ore Streammate Mensili
+AvgWatched_StreamedRatioMontly <- HoursStreamedMontly %>% 
+  inner_join(HoursWatchedMontly, by="Date") %>%
+  mutate(Avg_Watched_Streamed_Ratio_Montly = (Hours_Watched_Montly/Hours_Streamed_Montly)) %>%
+  select(Date, Avg_Watched_Streamed_Ratio_Montly)
+
+ggplot(AvgWatched_StreamedRatioMontly, aes(Date, Avg_Watched_Streamed_Ratio_Montly)) +
+  geom_point(aes(color = Date), show.legend = FALSE) +
+  geom_smooth(aes(group=1), se = FALSE) +
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line = element_line(),
+        axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5)) 
+```
+<br>
+Si può notare come il grafico abbia un importante decrescita fino a **Luglio e Agosto 2018**, dove si passa da circa **39** ore guardate per 1 ora streammata a circa **29/30**. In questo periodo di due anni e mezzo, le ore streammate sul Twitch hanno avuto un inscremento maggiore rispetto alle ore guardate denotando un *interesse maggiore da parte degli streamer*. <br>
+Mentre da Agosto 2018 ad Aprile 2021 si e passati a circa **28/29** ore guardate per 1 ora streammata. Questa seconda metà del grafico mostra che l'*interesse* per la piattaforma tra streamer e spettatori è *somigliante*.
+
+## 5. Aumento di Utenza sulla Piattaforma
+```{r}
+#Numero Medio di Canali Mesili
+AvgChannelsMontly <- TwitchGameRating %>%
+  group_by(Date) %>% 
+  summarise(Avg_Channels_Montly = sum(Avg_Channels))
+
+ggplot(AvgChannelsMontly, aes(Date, Avg_Channels_Montly)) +
+  geom_point(aes(color = Date), show.legend = FALSE) +
+  geom_smooth(aes(group=1), se = FALSE) +
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line = element_line(),
+        axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5)) 
+```
+```{r}
+#Numero Medio di Spettatori Mesili
+AvgViewersMontly <- TwitchGameRating %>%
+  group_by(Date) %>% 
+  summarise(Avg_Viewers_Montly = sum(Avg_Viewers))
+
+ggplot(AvgViewersMontly, aes(Date, Avg_Viewers_Montly)) +
+  geom_point(aes(color = Date), show.legend = FALSE) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  geom_smooth(aes(group=1), se = FALSE) +
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line = element_line(),
+        axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5)) 
+```
+<br>
+I due grafici mostrano l'aumento di utenza sia dal numero medio di streamer, sia dal numero medio di spettatori  che hanno utilizzato la piattaforma. <br>
+Nel primo grafico si passa da **15.000 streamer** medi nel mese di Gennaio 2016 a circa **95.000 streamer** ad Aprile 2021 con un rateo di incremento medio di **1.250 streamer** al mese.
+Mentre per il grafico degli spettatori medi si passa da **593.000 spettatori** a Gennaio 2016 a **2.834.000 spettatori** ad Aprile 2021 con un rateo di incremento medio **35.000 spettatori** al mese.
+<br>
+
+```{r}
+#Rapporto Spettatori Medi per Canali Medi Mensil
+AvgViewers_ChannelsRatioMontly <- AvgChannelsMontly %>% 
+  inner_join(AvgViewersMontly, by="Date") %>%
+  mutate(Avg_Viewers_Channels_Ratio_Montly= (Avg_Viewers_Montly/Avg_Channels_Montly)) %>%
+  select(Date, Avg_Viewers_Channels_Ratio_Montly)
+
+ggplot(AvgViewers_ChannelsRatioMontly, aes(Date, Avg_Viewers_Channels_Ratio_Montly)) +
+  geom_point(aes(color = Date), show.legend = FALSE) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE)) +
+  geom_smooth(aes(group=1), se = FALSE) +
+  theme(panel.background = element_rect(fill = "white"),
+        axis.line = element_line(),
+        axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5)) 
+```
+<br>
+Si può notare dal grafico l'importante decrescita della curva fino a **Luglio e Agosto 2018**, dove si passa da una media di circa **39** spettatori per streamer a circa **29/30**. In questo periodo di due anni e mezzo, c'è stato un inportante aumento del numero di streamer presenti sulla piattaforma rispetto al numero di spettatori. <br>
+Mentre da Agosto 2018 ad Aprile 2021 si e passati ad una media di circa **28/29** spettatori per streamer. Questa seconda metà del grafico mostra che l'*aumento di utenza* sulla piattaforma è *somigliante* tra streamer e spettatori.
